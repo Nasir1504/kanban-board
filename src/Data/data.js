@@ -1,5 +1,5 @@
 // Fake seed data for the Kanban board.
-// Shape: `stages` is keyed by stage id (insertion order = column order on screen),
+// Shape: `workflow` is keyed by stage id (insertion order = column order on screen),
 // and each stage owns its own `items` array of task objects.
 
 export const PRIORITIES = ["Critical", "High", "Medium", "Low"];
@@ -23,7 +23,7 @@ export const assignees = [
   { id: "u5", name: "Sofia Ivanova", initials: "SI", avatar: "https://i.pravatar.cc/80?img=26" },
 ];
 
-export const stages = {
+export const workflow = {
   backlog: {
     id: "backlog",
     title: "Backlog",
@@ -200,4 +200,4 @@ export const stages = {
   },
 };
 
-export default stages;
+export default workflow;
