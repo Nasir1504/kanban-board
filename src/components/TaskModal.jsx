@@ -24,17 +24,32 @@ const TAG_STYLES = {
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// Dates in the seed data are plain strings ("2026-09-01", "2026-08-23T10:40:00"),
-// so parse the parts by hand instead of via `new Date` — that keeps the rendered
-// day from shifting with the viewer's timezone.
+// This function takes a date string like "2026-08-25T10:30:00"
+// and converts it into a readable format like Aug 25, 2026.
 const formatDay = (value) => {
     if (!value) return null;
 
-    const [year, month, day] = value.split("T")[0].split("-");
+    // "2026-08-25T10:30:00" -> "2026-08-25"
+    const datePart = value.split("T")[0];
 
-    return `${MONTHS[Number(month) - 1]} ${Number(day)}, ${year}`;
+    // "2026-08-25" -> ["2026", "08", "25"]
+    const pieces = datePart.split("-");
+
+    const year = pieces[0];      // "2026"
+    const month = pieces[1];     // "08"
+    const day = pieces[2];       // "25"
+
+    // MONTHS is zero-indexed, so month 08 lives at position 7.
+    const monthName = MONTHS[Number(month) - 1];
+
+    // Number(day) strips the leading zero: "05" -> 5.
+    const dayNumber = Number(day);
+
+    return `${monthName} ${dayNumber}, ${year}`;
 };
 
+
+// formats both the date and the time.
 const formatStamp = (value) => {
     if (!value) return null;
 
@@ -66,8 +81,11 @@ const CONTROL = "h-11 w-full rounded-lg border border-gray-200 bg-white px-3 tex
 const TaskModal = ({ task, stage, onUpdate, onDelete, onClose }) => {
 
     const closeRef = useRef(null);
+    const titleRef = useRef(null);
     const descriptionRef = useRef(null);
 
+    const [isEditingTitle, setIsEditingTitle] = useState(false);
+    const [titleDraft, setTitleDraft] = useState(task.title);
     const [isEditingDescription, setIsEditingDescription] = useState(false);
     const [draft, setDraft] = useState(task.description ?? "");
     const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -76,7 +94,13 @@ const TaskModal = ({ task, stage, onUpdate, onDelete, onClose }) => {
         const handleKeyDown = (e) => {
             if (e.key !== "Escape") return;
 
-            // Escape backs out of the description editor first, then the modal.
+            // Escape backs out of an open editor first, then the modal.
+            if (isEditingTitle) {
+                setTitleDraft(task.title);
+                setIsEditingTitle(false);
+                return;
+            }
+
             if (isEditingDescription) {
                 setDraft(task.description ?? "");
                 setIsEditingDescription(false);
@@ -89,7 +113,7 @@ const TaskModal = ({ task, stage, onUpdate, onDelete, onClose }) => {
         document.addEventListener("keydown", handleKeyDown);
 
         return () => document.removeEventListener("keydown", handleKeyDown);
-    }, [onClose, isEditingDescription, task.description]);
+    }, [onClose, isEditingTitle, task.title, isEditingDescription, task.description]);
 
     useEffect(() => {
         closeRef.current?.focus();
@@ -103,6 +127,14 @@ const TaskModal = ({ task, stage, onUpdate, onDelete, onClose }) => {
     }, []);
 
     useEffect(() => {
+        if (!isEditingTitle) return;
+
+        const field = titleRef.current;
+        field?.focus();
+        field?.setSelectionRange(field.value.length, field.value.length);
+    }, [isEditingTitle]);
+
+    useEffect(() => {
         if (!isEditingDescription) return;
 
         const field = descriptionRef.current;
@@ -113,6 +145,20 @@ const TaskModal = ({ task, stage, onUpdate, onDelete, onClose }) => {
     const isOverdue = task.dueDate && task.dueDate < todayAsISO() && stage.id !== "done";
     const unusedTags = TAGS.filter(tag => !task.tags.includes(tag));
 
+    const commitTitle = () => {
+        setIsEditingTitle(false);
+
+        const next = titleDraft.trim();
+
+        // A task always keeps a title, so an empty draft snaps back to the current one.
+        if (!next || next === task.title) {
+            setTitleDraft(task.title);
+            return;
+        }
+
+        onUpdate(task.id, { title: next });
+    };
+
     const commitDescription = () => {
         setIsEditingDescription(false);
 
@@ -120,6 +166,15 @@ const TaskModal = ({ task, stage, onUpdate, onDelete, onClose }) => {
         if ((task.description ?? "") === next) return;
 
         onUpdate(task.id, { description: next || null });
+    };
+
+    // Clicking Save blurs whichever editor is open, which already commits it —
+    // these calls cover the draft that is somehow still open when Save runs.
+    const handleSave = () => {
+        if (isEditingTitle) commitTitle();
+        if (isEditingDescription) commitDescription();
+
+        onClose();
     };
 
     return (
@@ -148,7 +203,34 @@ const TaskModal = ({ task, stage, onUpdate, onDelete, onClose }) => {
                 </button>
 
                 <h2 id="task-modal-title" className="pr-10 text-2xl font-semibold leading-snug text-gray-900">
-                    {task.title}
+                    {isEditingTitle ? (
+                        <input
+                            ref={titleRef}
+                            value={titleDraft}
+                            onChange={e => setTitleDraft(e.target.value)}
+                            onBlur={commitTitle}
+                            onKeyDown={e => {
+                                // Enter blurs instead of committing directly, so the title only saves once.
+                                if (e.key !== "Enter") return;
+
+                                e.preventDefault();
+                                e.currentTarget.blur();
+                            }}
+                            aria-label="Task title"
+                            className="-mx-2 block w-[calc(100%_+_1rem)] rounded-lg border border-gray-200 px-2 py-1 text-2xl font-semibold leading-snug text-gray-900 outline-none focus:border-gray-400"
+                        />
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => {
+                                setTitleDraft(task.title);
+                                setIsEditingTitle(true);
+                            }}
+                            className="-mx-2 block w-[calc(100%_+_1rem)] rounded-lg px-2 py-1 text-left leading-snug hover:bg-gray-50"
+                        >
+                            {task.title}
+                        </button>
+                    )}
                 </h2>
 
                 <p className="mt-1.5 text-[13px] text-gray-400">
@@ -269,14 +351,24 @@ const TaskModal = ({ task, stage, onUpdate, onDelete, onClose }) => {
                         {task.createdAt ? `Created ${formatDay(task.createdAt)}` : "—"}
                     </span>
 
-                    <button
-                        type="button"
-                        onClick={() => (confirmingDelete ? onDelete(task.id) : setConfirmingDelete(true))}
-                        onBlur={() => setConfirmingDelete(false)}
-                        className="rounded-md px-2 py-1 text-[15px] font-medium text-red-600 hover:bg-red-50"
-                    >
-                        {confirmingDelete ? "Click again to delete" : "Delete task"}
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            type="button"
+                            onClick={handleSave}
+                            className="rounded-md bg-gray-900 px-4 py-1.5 text-[15px] font-medium text-white transition-colors hover:bg-gray-700"
+                        >
+                            Save
+                        </button>
+
+                        <button
+                            type="button"
+                            onClick={() => (confirmingDelete ? onDelete(task.id) : setConfirmingDelete(true))}
+                            onBlur={() => setConfirmingDelete(false)}
+                            className="rounded-md px-3 py-1.5 text-[15px] font-medium text-red-600 hover:bg-red-50"
+                        >
+                            {confirmingDelete ? "Click again to delete" : "Delete task"}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>
