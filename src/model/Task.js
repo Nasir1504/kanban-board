@@ -1,6 +1,24 @@
 import mongoose from "mongoose";
 import { PRIORITIES, TAGS } from "../Data/data.js";
 
+const DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+
+const toDateOnlyString = (value) => {
+  if (value == null || value === "") return null;
+
+  if (value instanceof Date) {
+    if (Number.isNaN(value.getTime())) return null;
+    return value.toISOString().slice(0, 10);
+  }
+
+  if (typeof value === "string") {
+    const datePart = value.split("T")[0];
+    return DATE_ONLY.test(datePart) ? datePart : value;
+  }
+
+  return value;
+};
+
 const taskSchema = new mongoose.Schema(
   {
     title: {
@@ -13,8 +31,13 @@ const taskSchema = new mongoose.Schema(
       default: null,
     },
     dueDate: {
-      type: Date,
+      type: String,
       default: null,
+      set: toDateOnlyString,
+      validate: {
+        validator: (value) => value == null || DATE_ONLY.test(value),
+        message: "dueDate must be YYYY-MM-DD or null",
+      },
     },
     priority: {
       type: String,
@@ -55,6 +78,14 @@ const taskSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+const serializeDueDate = (_doc, ret) => {
+  ret.dueDate = toDateOnlyString(ret.dueDate);
+  return ret;
+};
+
+taskSchema.set("toJSON", { transform: serializeDueDate });
+taskSchema.set("toObject", { transform: serializeDueDate });
 
 // the board view's one query: every task of a board, grouped by column, in order
 taskSchema.index({ boardId: 1, column: 1, order: 1 });
