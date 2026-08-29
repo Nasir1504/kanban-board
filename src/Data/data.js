@@ -16,11 +16,36 @@ export const TAGS = [
 ];
 
 export const assignees = [
-  { id: "u1", name: "Aisha Rahman", initials: "AR", avatar: "https://i.pravatar.cc/80?img=45" },
-  { id: "u2", name: "Marcus Chen", initials: "MC", avatar: "https://i.pravatar.cc/80?img=12" },
-  { id: "u3", name: "Priya Nair", initials: "PN", avatar: "https://i.pravatar.cc/80?img=32" },
-  { id: "u4", name: "Diego Alvarez", initials: "DA", avatar: "https://i.pravatar.cc/80?img=68" },
-  { id: "u5", name: "Sofia Ivanova", initials: "SI", avatar: "https://i.pravatar.cc/80?img=26" },
+  {
+    id: "u1",
+    name: "Aisha Rahman",
+    initials: "AR",
+    avatar: "https://i.pravatar.cc/80?img=45",
+  },
+  {
+    id: "u2",
+    name: "Marcus Chen",
+    initials: "MC",
+    avatar: "https://i.pravatar.cc/80?img=12",
+  },
+  {
+    id: "u3",
+    name: "Priya Nair",
+    initials: "PN",
+    avatar: "https://i.pravatar.cc/80?img=32",
+  },
+  {
+    id: "u4",
+    name: "Diego Alvarez",
+    initials: "DA",
+    avatar: "https://i.pravatar.cc/80?img=68",
+  },
+  {
+    id: "u5",
+    name: "Sofia Ivanova",
+    initials: "SI",
+    avatar: "https://i.pravatar.cc/80?img=26",
+  },
 ];
 
 export const workflow = {
