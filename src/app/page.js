@@ -1,69 +1,140 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import Box from "@/components/Box";
+import TaskModal from "@/components/TaskModal";
+import { DragDropProvider } from "@dnd-kit/react";
+import { workflow as INITIAL_WORKFLOW } from "@/Data/data";
+
+const findTask = (workflow, taskId) => {
+  if (!taskId) return null;
+
+  for (const stage of Object.values(workflow)) {
+    const task = stage.items.find((item) => item.id === taskId);
+    if (task) return { task, stage };
+  }
+
+  return null;
+};
+
+// Matches the shape of the seed data ("2026-08-23T10:40:00") so the modal can
+// format an edit the same way it formats a value that came from data.js.
+const nowAsStamp = () => {
+  const now = new Date();
+  const pad = (value) => String(value).padStart(2, "0");
+
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}T${pad(now.getHours())}:${pad(now.getMinutes())}:00`;
+};
 
 export default function Home() {
+  const [stage, setStage] = useState(INITIAL_WORKFLOW);
+  const [selectedId, setSelectedId] = useState(null);
+
+  const selected = findTask(stage, selectedId);
+
+  const handleUpdateTask = (taskId, patch) => {
+    setStage((curr) => {
+      const boxId = Object.keys(curr).find((id) =>
+        curr[id].items.some((item) => item.id === taskId)
+      );
+      if (!boxId) return curr;
+
+      return {
+        ...curr,
+        [boxId]: {
+          ...curr[boxId],
+          items: curr[boxId].items.map((item) =>
+            item.id === taskId
+              ? { ...item, ...patch, updatedAt: nowAsStamp() }
+              : item
+          ),
+        },
+      };
+    });
+  };
+
+  const handleDeleteTask = (taskId) => {
+    setStage((curr) => {
+      const boxId = Object.keys(curr).find((id) =>
+        curr[id].items.some((item) => item.id === taskId)
+      );
+      if (!boxId) return curr;
+
+      return {
+        ...curr,
+        [boxId]: {
+          ...curr[boxId],
+          items: curr[boxId].items.filter((item) => item.id !== taskId),
+        },
+      };
+    });
+
+    setSelectedId(null);
+  };
+
+  const handleDragEnd = (e) => {
+    if (e.canceled) return;
+
+    const { source, target } = e.operation;
+    if (!source || !target) return;
+
+    const to = target.id;
+
+    setStage((curr) => {
+      const from = Object.keys(curr).find((boxId) => {
+        return curr[boxId].items.some((item) => item.id === source.id);
+      });
+
+      if (!curr[to] || !from || from === to) return curr;
+
+      const moved = curr[from].items.find((item) => item.id === source.id);
+      if (!moved) return curr;
+
+      return {
+        ...curr,
+        [from]: {
+          ...curr[from],
+          items: curr[from].items.filter((item) => item.id !== source.id),
+        },
+        [to]: {
+          ...curr[to],
+          items: [...curr[to].items, moved],
+        },
+      };
+    });
+  };
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert h-5 w-[100px]"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the{" "}
-            <code className="rounded bg-black/[.06] px-1.5 py-0.5 font-mono text-[0.9em] dark:bg-white/[.08]">
-              page.js
-            </code>{" "}
-            file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert h-[14px] w-4"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={14}
+    <DragDropProvider onDragEnd={handleDragEnd}>
+      <main className="flex items-start justify-center pt-10 gap-10">
+        {Object.entries(stage).map(([stageId, stageItem]) => {
+          {
+            /* console.log(stageId) */
+          }
+
+          return (
+            <Box
+              key={stageId}
+              id={stageId}
+              title={stageItem.title}
+              emoji={stageItem.emoji}
+              boxItems={stageItem.items}
+              onSelectItem={setSelectedId}
             />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
+          );
+        })}
       </main>
-    </div>
+
+      {selected && (
+        <TaskModal
+          key={selected.task.id}
+          task={selected.task}
+          stage={selected.stage}
+          onUpdate={handleUpdateTask}
+          onDelete={handleDeleteTask}
+          onClose={() => setSelectedId(null)}
+        />
+      )}
+    </DragDropProvider>
   );
 }
