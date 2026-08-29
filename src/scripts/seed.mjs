@@ -33,8 +33,9 @@ const board = await Board.create({
 
 // 4. tasks — flatten every column's items
 const tasks = Object.values(workflow).flatMap((col) =>
-  col.items.map(({ id, assigneeId, ...t }, i) => ({
+  col.items.map(({ id, assigneeId, dueDate, ...t }, i) => ({
     ...t,
+    dueDate: dueDate ?? null,
     boardId: board._id,
     column: col.id,
     order: (i + 1) * 1000,

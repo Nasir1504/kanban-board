@@ -88,6 +88,7 @@ export default function Home() {
       if (!curr[to] || !from || from === to) return curr;
 
       const moved = curr[from].items.find((item) => item.id === source.id);
+      if (!moved) return curr;
 
       return {
         ...curr,

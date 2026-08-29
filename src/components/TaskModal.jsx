@@ -84,6 +84,28 @@ const todayAsISO = () => {
   return `${now.getFullYear()}-${month}-${day}`;
 };
 
+// Calendar date as YYYY-MM-DD, whether the source is a date-only string,
+// an ISO datetime, or a Date (e.g. from Mongo). Lexicographic compare is
+// then safe against todayAsISO().
+const toDateOnlyISO = (value) => {
+  if (!value) return null;
+
+  if (typeof value === "string") {
+    const datePart = value.split("T")[0];
+    return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : null;
+  }
+
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+
+  // Date-only values from Mongo/JSON are stored as UTC midnight of that day.
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
 const Label = ({ children }) => (
   <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
     {children}
@@ -162,8 +184,9 @@ const TaskModal = ({ task, stage, onUpdate, onDelete, onClose }) => {
     field?.setSelectionRange(field.value.length, field.value.length);
   }, [isEditingDescription]);
 
+  const dueDateISO = toDateOnlyISO(task.dueDate);
   const isOverdue =
-    task.dueDate && task.dueDate < todayAsISO() && stage.id !== "done";
+    dueDateISO && dueDateISO < todayAsISO() && stage.id !== "done";
   const unusedTags = TAGS.filter((tag) => !task.tags.includes(tag));
 
   const commitTitle = () => {
@@ -290,7 +313,7 @@ const TaskModal = ({ task, stage, onUpdate, onDelete, onClose }) => {
             <Label>Due date</Label>
             <input
               type="date"
-              value={task.dueDate ?? ""}
+              value={dueDateISO ?? ""}
               onChange={(e) =>
                 onUpdate(task.id, { dueDate: e.target.value || null })
               }
