@@ -39,14 +39,18 @@ jobs:
         if: github.event_name == 'pull_request'
         run: docker build -t kanban-app .
 
-      - name: Debug OIDC claims
-        if: github.event_name == 'push'
-        run: |
-          TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
-            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
-          PAYLOAD=$(echo "$TOKEN" | cut -d. -f2)
-          PAYLOAD="${PAYLOAD}$(printf '%*s' $(( (4 - ${#PAYLOAD} % 4) % 4 )) '' | tr ' ' '=')"
-          echo "$PAYLOAD" | tr '_-' '/+' | base64 -d | jq '{iss, aud, sub, repository, ref}'
+      # Uncomment to print the OIDC claims GitHub actually sends. The `sub` claim
+      # must match the sub condition in the github-actions-ecr-push role's trust
+      # policy, or AssumeRoleWithWebIdentity is denied. Handy if the repo or owner
+      # is renamed, or an environment/tag trigger changes the claim's shape.
+      # - name: Debug OIDC claims
+      #   if: github.event_name == 'push'
+      #   run: |
+      #     TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+      #       "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
+      #     PAYLOAD=$(echo "$TOKEN" | cut -d. -f2)
+      #     PAYLOAD="${PAYLOAD}$(printf '%*s' $(( (4 - ${#PAYLOAD} % 4) % 4 )) '' | tr ' ' '=')"
+      #     echo "$PAYLOAD" | tr '_-' '/+' | base64 -d | jq '{iss, aud, sub, repository, ref}'
 
       - name: Configure AWS credentials
         if: github.event_name == 'push'
