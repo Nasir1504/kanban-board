@@ -7,3 +7,5 @@ Dockerfile
 .dockerignore
 npm-debug.log
 README.md
+*.pem
+nasir-ec2-server.pem
