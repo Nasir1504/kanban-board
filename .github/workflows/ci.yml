@@ -12,6 +12,10 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    permissions:
+      id-token: write
+      contents: read
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -31,5 +35,28 @@ jobs:
       - name: Lint
         run: npm run lint
 
-      - name: Build Docker image
+      - name: Build Docker image (PR check)
+        if: github.event_name == 'pull_request'
         run: docker build -t kanban-app .
+
+      - name: Configure AWS credentials
+        if: github.event_name == 'push'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to ECR
+        id: ecr
+        if: github.event_name == 'push'
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push
+        if: github.event_name == 'push'
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPO: ${{ vars.ECR_REPOSITORY }}
+        run: |
+          docker build -t $REGISTRY/$REPO:$GITHUB_SHA -t $REGISTRY/$REPO:latest .
+          docker push $REGISTRY/$REPO:$GITHUB_SHA
+          docker push $REGISTRY/$REPO:latest
