@@ -39,12 +39,26 @@ jobs:
         if: github.event_name == 'pull_request'
         run: docker build -t kanban-app .
 
+      # Uncomment to print the OIDC claims GitHub actually sends. The `sub` claim
+      # must match the sub condition in the github-actions-ecr-push role's trust
+      # policy, or AssumeRoleWithWebIdentity is denied. Handy if the repo or owner
+      # is renamed, or an environment/tag trigger changes the claim's shape.
+      # - name: Debug OIDC claims
+      #   if: github.event_name == 'push'
+      #   run: |
+      #     TOKEN=$(curl -sS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+      #       "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r '.value')
+      #     PAYLOAD=$(echo "$TOKEN" | cut -d. -f2)
+      #     PAYLOAD="${PAYLOAD}$(printf '%*s' $(( (4 - ${#PAYLOAD} % 4) % 4 )) '' | tr ' ' '=')"
+      #     echo "$PAYLOAD" | tr '_-' '/+' | base64 -d | jq '{iss, aud, sub, repository, ref}'
+
       - name: Configure AWS credentials
         if: github.event_name == 'push'
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+          role-skip-session-tagging: true
 
       - name: Login to ECR
         id: ecr
@@ -60,3 +74,117 @@ jobs:
           docker build -t $REGISTRY/$REPO:$GITHUB_SHA -t $REGISTRY/$REPO:latest .
           docker push $REGISTRY/$REPO:$GITHUB_SHA
           docker push $REGISTRY/$REPO:latest
+
+  # Pulls the image just pushed onto the EC2 host and swaps the running
+  # container for it. Deploys the immutable :$GITHUB_SHA tag, never :latest —
+  # a container is bound to an image ID, so re-running with a moving tag gives
+  # no way back to a known-good build.
+  deploy:
+    if: github.event_name == 'push'
+    needs: build
+    runs-on: ubuntu-latest
+
+    permissions:
+      id-token: write
+      contents: read
+
+    steps:
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-skip-session-tagging: true
+
+      - name: Login to ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Deploy to EC2
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+          REPO: ${{ vars.ECR_REPOSITORY }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          EC2_HOST: ${{ vars.EC2_HOST }}
+          EC2_USER: ${{ vars.EC2_USER }}
+          EC2_HOST_KEY: ${{ vars.EC2_HOST_KEY }}
+          CONTAINER: ${{ vars.APP_CONTAINER }}
+          APP_PORT: ${{ vars.APP_PORT }}
+          SSH_KEY: ${{ secrets.EC2_SSH_KEY }}
+          MONGODB_URI: ${{ secrets.MONGODB_URI }}
+        run: |
+          set -euo pipefail
+
+          mkdir -p ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+
+          # Pin the host key if EC2_HOST_KEY is set; otherwise trust on first
+          # use, which a scan every run makes fairly weak. `ssh-keyscan -t
+          # ed25519 <host>` on a machine you trust gives the value to pin.
+          if [ -n "${EC2_HOST_KEY:-}" ]; then
+            printf '%s\n' "$EC2_HOST_KEY" > ~/.ssh/known_hosts
+          else
+            ssh-keyscan -H "$EC2_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          fi
+
+          IMAGE="$REGISTRY/$REPO:$GITHUB_SHA"
+
+          # The runner holds the ECR role, so it mints the registry token and
+          # hands it over. The instance itself needs no IAM role that way.
+          ECR_PASSWORD="$(aws ecr get-login-password --region "$AWS_REGION")"
+          echo "::add-mask::$ECR_PASSWORD"
+
+          # Values interpolate into the heredoc on the runner, so secrets travel
+          # over stdin rather than argv — nothing sensitive lands in the remote
+          # host's process list. \$ escapes defer expansion to the remote shell.
+          ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes \
+            "$EC2_USER@$EC2_HOST" 'bash -s' <<EOF
+          set -euo pipefail
+
+          APP_DIR="\$HOME/kanban"
+          mkdir -p "\$APP_DIR"
+
+          # Rewritten every deploy, so the host keeps no config of its own and
+          # GitHub secrets stay the single source of truth.
+          umask 077
+          cat > "\$APP_DIR/.env" <<'ENVEOF'
+          MONGODB_URI=$MONGODB_URI
+          ENVEOF
+
+          printf '%s' '$ECR_PASSWORD' | docker login --username AWS --password-stdin '$REGISTRY'
+          docker pull '$IMAGE'
+
+          # Image ID of what is serving right now, to roll back to on failure.
+          PREVIOUS="\$(docker inspect --format '{{.Image}}' '$CONTAINER' 2>/dev/null || true)"
+
+          start() {
+            docker rm -f '$CONTAINER' >/dev/null 2>&1 || true
+            docker run -d --name '$CONTAINER' --restart unless-stopped \
+              -p '$APP_PORT':3000 --env-file "\$APP_DIR/.env" "\$1" >/dev/null
+          }
+
+          healthy() {
+            for _ in \$(seq 1 30); do
+              curl -fsS -o /dev/null "http://localhost:$APP_PORT/" && return 0
+              sleep 2
+            done
+            return 1
+          }
+
+          start '$IMAGE'
+
+          if ! healthy; then
+            echo "health check failed for $IMAGE"
+            docker logs --tail 50 '$CONTAINER' || true
+            if [ -n "\$PREVIOUS" ]; then
+              echo "rolling back to \$PREVIOUS"
+              start "\$PREVIOUS"
+              healthy && echo "rollback healthy" || echo "rollback also unhealthy"
+            fi
+            exit 1
+          fi
+
+          docker image prune -f >/dev/null
+          echo "deployed $IMAGE"
+          EOF
