@@ -107,9 +107,9 @@ export default function Home() {
   return (
     <DragDropProvider onDragEnd={handleDragEnd}>
       <main className="flex items-start justify-center pt-10 gap-10">
-      <div>
-        <h1>Task</h1>
-      </div>
+        <div>
+          <h1>Task</h1>
+        </div>
         {Object.entries(stage).map(([stageId, stageItem]) => {
           {
             /* console.log(stageId) */
