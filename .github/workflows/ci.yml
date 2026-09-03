@@ -100,6 +100,30 @@ jobs:
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
+      # GitHub-hosted runners have no fixed egress IP, so port 22 cannot be
+      # allowlisted in advance. Open a /32 for this run only and close it below,
+      # leaving the group with no standing SSH ingress between deploys.
+      - name: Open SSH for this runner
+        id: sg
+        env:
+          EC2_HOST: ${{ vars.EC2_HOST }}
+        run: |
+          set -euo pipefail
+
+          RUNNER_IP="$(curl -fsS --retry 3 https://checkip.amazonaws.com)"
+          SG_ID="$(aws ec2 describe-instances \
+            --filters "Name=ip-address,Values=$EC2_HOST" \
+            --query 'Reservations[0].Instances[0].SecurityGroups[0].GroupId' \
+            --output text)"
+
+          # Saved as outputs so the revoke below still runs when the deploy
+          # fails partway through.
+          echo "sg_id=$SG_ID" >> "$GITHUB_OUTPUT"
+          echo "cidr=$RUNNER_IP/32" >> "$GITHUB_OUTPUT"
+
+          aws ec2 authorize-security-group-ingress --group-id "$SG_ID" \
+            --ip-permissions "IpProtocol=tcp,FromPort=22,ToPort=22,IpRanges=[{CidrIp=$RUNNER_IP/32,Description=gha-run-$GITHUB_RUN_ID}]" >/dev/null
+
       - name: Deploy to EC2
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
@@ -188,3 +212,12 @@ jobs:
           docker image prune -f >/dev/null
           echo "deployed $IMAGE"
           EOF
+
+      # always(), so a failed or cancelled deploy still closes the hole.
+      - name: Close SSH
+        if: always() && steps.sg.outputs.sg_id != ''
+        run: |
+          aws ec2 revoke-security-group-ingress \
+            --group-id '${{ steps.sg.outputs.sg_id }}' \
+            --protocol tcp --port 22 \
+            --cidr '${{ steps.sg.outputs.cidr }}' >/dev/null

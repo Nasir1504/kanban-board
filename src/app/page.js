@@ -108,7 +108,7 @@ export default function Home() {
     <DragDropProvider onDragEnd={handleDragEnd}>
       <main className="flex items-start justify-center pt-10 gap-10">
         <div>
-          <h1>Task</h1>
+          <h1>Task Dashboard</h1>
         </div>
         {Object.entries(stage).map(([stageId, stageItem]) => {
           {
