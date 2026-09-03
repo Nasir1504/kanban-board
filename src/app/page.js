@@ -106,26 +106,28 @@ export default function Home() {
 
   return (
     <DragDropProvider onDragEnd={handleDragEnd}>
-      <main className="flex items-start justify-center pt-10 gap-10">
-        <div>
+      <main className="flex flex-col items-start justify-center pt-10 gap-10">
+        <div className="flex items-start justify-center w-full">
           <h1>Task Dashboard</h1>
         </div>
-        {Object.entries(stage).map(([stageId, stageItem]) => {
-          {
-            /* console.log(stageId) */
-          }
+        <div className="flex items-start justify-center w-full h-full">
+          {Object.entries(stage).map(([stageId, stageItem]) => {
+            {
+              /* console.log(stageId) */
+            }
 
-          return (
-            <Box
-              key={stageId}
-              id={stageId}
-              title={stageItem.title}
-              emoji={stageItem.emoji}
-              boxItems={stageItem.items}
-              onSelectItem={setSelectedId}
-            />
-          );
-        })}
+            return (
+              <Box
+                key={stageId}
+                id={stageId}
+                title={stageItem.title}
+                emoji={stageItem.emoji}
+                boxItems={stageItem.items}
+                onSelectItem={setSelectedId}
+              />
+            );
+          })}
+        </div>
       </main>
 
       {selected && (
