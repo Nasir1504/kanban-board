@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { assignees, PRIORITIES, TAGS } from "@/Data/data";
+import { PRIORITIES, TAGS } from "@/Data/data";
 
 // The selected priority pill borrows its own colour; the rest stay neutral outlines.
 const PRIORITY_STYLES = {
@@ -115,7 +115,7 @@ const Label = ({ children }) => (
 const CONTROL =
   "h-11 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-700 outline-none transition-colors focus:border-gray-400";
 
-const TaskModal = ({ task, stage, onUpdate, onDelete, onClose }) => {
+const TaskModal = ({ task, stage, assignees, onUpdate, onDelete, onClose }) => {
   const closeRef = useRef(null);
   const titleRef = useRef(null);
   const descriptionRef = useRef(null);

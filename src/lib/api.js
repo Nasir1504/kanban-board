@@ -22,14 +22,20 @@ export const parseBody = (schema, body) => {
 };
 
 // The client works with `id`; Mongo hands back `_id` and ObjectIds.
+// The timestamps are flattened to ISO strings on purpose: a task reaches the
+// client two ways — through the RSC payload, which preserves a Date as a Date,
+// and as JSON from /api/tasks, which stringifies it — and the modal formats them
+// by splitting on "T". Without this the same task has two shapes.
 export const serializeTask = (task) => {
-  const { _id, __v, boardId, assigneeId, ...rest } = task;
+  const { _id, __v, boardId, assigneeId, createdAt, updatedAt, ...rest } = task;
 
   return {
     id: String(_id),
     ...rest,
     boardId: boardId ? String(boardId) : null,
     assigneeId: assigneeId ? String(assigneeId) : null,
+    createdAt: createdAt instanceof Date ? createdAt.toISOString() : createdAt,
+    updatedAt: updatedAt instanceof Date ? updatedAt.toISOString() : updatedAt,
   };
 };
 
