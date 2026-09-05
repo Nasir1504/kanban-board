@@ -2,109 +2,10 @@
 
 import { useEffect, useRef, useState } from "react";
 import { PRIORITIES, TAGS } from "@/Data/data";
-
-// The selected priority pill borrows its own colour; the rest stay neutral outlines.
-const PRIORITY_STYLES = {
-  Critical: "border-red-300 text-red-600",
-  High: "border-orange-300 text-orange-600",
-  Medium: "border-amber-400 text-amber-600",
-  Low: "border-emerald-300 text-emerald-600",
-};
-
-const TAG_STYLES = {
-  Design: "bg-purple-50 text-purple-600",
-  Frontend: "bg-blue-50 text-blue-600",
-  Backend: "bg-teal-50 text-teal-600",
-  Feature: "bg-orange-50 text-orange-600",
-  Bug: "bg-rose-50 text-rose-600",
-  Performance: "bg-emerald-50 text-emerald-600",
-  Infrastructure: "bg-slate-100 text-slate-600",
-  Documentation: "bg-indigo-50 text-indigo-600",
-};
-
-const MONTHS = [
-  "Jan",
-  "Feb",
-  "Mar",
-  "Apr",
-  "May",
-  "Jun",
-  "Jul",
-  "Aug",
-  "Sep",
-  "Oct",
-  "Nov",
-  "Dec",
-];
-
-// This function takes a date string like "2026-08-25T10:30:00"
-// and converts it into a readable format like Aug 25, 2026.
-const formatDay = (value) => {
-  if (!value) return null;
-
-  // "2026-08-25T10:30:00" -> "2026-08-25"
-  const datePart = value.split("T")[0];
-
-  // "2026-08-25" -> ["2026", "08", "25"]
-  const pieces = datePart.split("-");
-
-  const year = pieces[0]; // "2026"
-  const month = pieces[1]; // "08"
-  const day = pieces[2]; // "25"
-
-  // MONTHS is zero-indexed, so month 08 lives at position 7.
-  const monthName = MONTHS[Number(month) - 1];
-
-  // Number(day) strips the leading zero: "05" -> 5.
-  const dayNumber = Number(day);
-
-  return `${monthName} ${dayNumber}, ${year}`;
-};
-
-// formats both the date and the time.
-const formatStamp = (value) => {
-  if (!value) return null;
-
-  const day = formatDay(value);
-  const time = value.split("T")[1];
-  if (!time) return day;
-
-  const [rawHour, minute] = time.split(":");
-  const hour = Number(rawHour);
-  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
-
-  return `${day}, ${hour12}:${minute} ${hour < 12 ? "AM" : "PM"}`;
-};
-
-const todayAsISO = () => {
-  const now = new Date();
-  const month = String(now.getMonth() + 1).padStart(2, "0");
-  const day = String(now.getDate()).padStart(2, "0");
-
-  return `${now.getFullYear()}-${month}-${day}`;
-};
-
-// Calendar date as YYYY-MM-DD, whether the source is a date-only string,
-// an ISO datetime, or a Date (e.g. from Mongo). Lexicographic compare is
-// then safe against todayAsISO().
-const toDateOnlyISO = (value) => {
-  if (!value) return null;
-
-  if (typeof value === "string") {
-    const datePart = value.split("T")[0];
-    return /^\d{4}-\d{2}-\d{2}$/.test(datePart) ? datePart : null;
-  }
-
-  const date = value instanceof Date ? value : new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-
-  // Date-only values from Mongo/JSON are stored as UTC midnight of that day.
-  const year = date.getUTCFullYear();
-  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
-  const day = String(date.getUTCDate()).padStart(2, "0");
-
-  return `${year}-${month}-${day}`;
-};
+import { formatDay, formatStamp, isOverdue, toDateOnlyISO } from "@/lib/dates";
+// The selected priority pill borrows its own colour; the rest stay neutral
+// outlines — same palette the cards on the board use.
+import { PRIORITY_STYLES, tagStyle } from "@/lib/taskStyles";
 
 const Label = ({ children }) => (
   <span className="text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">
@@ -185,8 +86,7 @@ const TaskModal = ({ task, stage, assignees, onUpdate, onDelete, onClose }) => {
   }, [isEditingDescription]);
 
   const dueDateISO = toDateOnlyISO(task.dueDate);
-  const isOverdue =
-    dueDateISO && dueDateISO < todayAsISO() && stage.id !== "done";
+  const late = isOverdue(dueDateISO, stage.id);
   const unusedTags = TAGS.filter((tag) => !task.tags.includes(tag));
 
   const commitTitle = () => {
@@ -317,7 +217,7 @@ const TaskModal = ({ task, stage, assignees, onUpdate, onDelete, onClose }) => {
               onChange={(e) =>
                 onUpdate(task.id, { dueDate: e.target.value || null })
               }
-              className={`${CONTROL} ${isOverdue ? "border-red-300 text-red-600" : ""}`}
+              className={`${CONTROL} ${late ? "border-red-300 text-red-600" : ""}`}
             />
           </div>
         </div>
@@ -349,7 +249,7 @@ const TaskModal = ({ task, stage, assignees, onUpdate, onDelete, onClose }) => {
             {task.tags.map((tag) => (
               <span
                 key={tag}
-                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] ${TAG_STYLES[tag] ?? "bg-gray-100 text-gray-600"}`}
+                className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 text-[13px] ${tagStyle(tag)}`}
               >
                 {tag}
                 <button

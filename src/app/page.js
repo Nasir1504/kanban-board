@@ -12,7 +12,9 @@ export default async function Home() {
   if (!board) {
     return (
       <main className="flex flex-1 flex-col items-center justify-center gap-2 p-10 text-center">
-        <h1 className="text-xl font-medium">No board yet</h1>
+        <h1 className="text-2xl font-semibold tracking-tight text-gray-900">
+          No board yet
+        </h1>
         <p className="text-sm text-gray-500">
           Run <code className="font-mono">npm run seed</code> to create one.
         </p>

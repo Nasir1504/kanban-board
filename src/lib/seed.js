@@ -24,7 +24,7 @@ export const seedDatabase = async () => {
 
   // board — columns come from the values of `workflow`
   const board = await Board.create({
-    name: "My Board",
+    name: "Task Dashboard",
     columns: Object.values(workflow).map((col, i) => ({
       key: col.id,
       title: col.title,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { DragDropProvider } from "@dnd-kit/react";
 import Box from "@/components/Box";
 import TaskModal from "@/components/TaskModal";
@@ -85,6 +85,26 @@ const request = async (url, { method, body } = {}) => {
   return payload;
 };
 
+// The dot under the title. Because every edit is optimistic the board itself
+// never looks busy, so this is the only place the writes behind it show up.
+const SyncStatus = ({ isBusy, hasFailed }) => {
+  const { dot, label } = hasFailed
+    ? { dot: "bg-red-500", label: "Connection lost" }
+    : isBusy
+      ? { dot: "bg-amber-400 animate-pulse", label: "Saving…" }
+      : { dot: "bg-emerald-500", label: "All changes saved" };
+
+  return (
+    <p
+      aria-live="polite"
+      className="flex items-center gap-2 text-[13px] text-gray-500"
+    >
+      <span aria-hidden="true" className={`h-2 w-2 rounded-full ${dot}`} />
+      {label}
+    </p>
+  );
+};
+
 const BoardView = ({ initialStages, initialAssignees, title }) => {
   const [stages, setStages] = useState(initialStages);
   // A reseed mints new user ids, so the assignee list is state too.
@@ -93,6 +113,9 @@ const BoardView = ({ initialStages, initialAssignees, title }) => {
   const [error, setError] = useState(null);
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [isResetting, setIsResetting] = useState(false);
+  // Counted rather than a boolean: two edits can be in flight at once, and the
+  // first to land must not clear the indicator for the second.
+  const [pending, setPending] = useState(0);
 
   useEffect(() => {
     if (!error) return;
@@ -102,6 +125,23 @@ const BoardView = ({ initialStages, initialAssignees, title }) => {
   }, [error]);
 
   const selected = findTask(stages, selectedId);
+
+  // Cards only carry an `assigneeId`, so they look their person up in here.
+  const assigneeById = useMemo(
+    () => Object.fromEntries(assignees.map((user) => [user.id, user])),
+    [assignees]
+  );
+
+  // Every request goes through here so the status dot sees all of them.
+  const track = async (promise) => {
+    setPending((count) => count + 1);
+
+    try {
+      return await promise;
+    } finally {
+      setPending((count) => count - 1);
+    }
+  };
 
   // Every mutation below is optimistic: the board updates now, the request
   // follows, and a failure puts the old value back with a message.
@@ -118,10 +158,12 @@ const BoardView = ({ initialStages, initialAssignees, title }) => {
     );
 
     try {
-      const saved = await request(`/api/tasks/${taskId}`, {
-        method: "PATCH",
-        body: patch,
-      });
+      const saved = await track(
+        request(`/api/tasks/${taskId}`, {
+          method: "PATCH",
+          body: patch,
+        })
+      );
 
       // The server owns `updatedAt` and any trimming the schema did.
       setStages((curr) => withTask(curr, taskId, saved));
@@ -139,7 +181,7 @@ const BoardView = ({ initialStages, initialAssignees, title }) => {
     setStages((curr) => withoutTask(curr, taskId));
 
     try {
-      await request(`/api/tasks/${taskId}`, { method: "DELETE" });
+      await track(request(`/api/tasks/${taskId}`, { method: "DELETE" }));
     } catch (requestError) {
       setStages((curr) => withPlacedTask(curr, previous));
       setError(`Could not delete the task: ${requestError.message}`);
@@ -164,10 +206,12 @@ const BoardView = ({ initialStages, initialAssignees, title }) => {
     setStages((curr) => withPlacedTask(withoutTask(curr, previous.id), moved));
 
     try {
-      const saved = await request(`/api/tasks/${previous.id}`, {
-        method: "PATCH",
-        body: { column: to, order },
-      });
+      const saved = await track(
+        request(`/api/tasks/${previous.id}`, {
+          method: "PATCH",
+          body: { column: to, order },
+        })
+      );
 
       setStages((curr) => withTask(curr, previous.id, saved));
     } catch (requestError) {
@@ -186,7 +230,7 @@ const BoardView = ({ initialStages, initialAssignees, title }) => {
     setIsResetting(true);
 
     try {
-      const { board } = await request("/api/seed", { method: "POST" });
+      const { board } = await track(request("/api/seed", { method: "POST" }));
 
       setSelectedId(null);
       setStages(board.stages);
@@ -200,9 +244,16 @@ const BoardView = ({ initialStages, initialAssignees, title }) => {
 
   return (
     <DragDropProvider onDragEnd={handleDragEnd}>
-      <main className="flex flex-col items-start justify-center pt-10 gap-10">
-        <div className="relative flex items-center justify-center w-full px-10">
-          <h1>{title}</h1>
+      <main className="mx-auto w-full max-w-[1600px] px-6 py-10 sm:px-10">
+        <header className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight text-gray-900">
+              {title}
+            </h1>
+            <p className="mt-1.5 text-[15px] text-gray-500">
+              Manage and track tasks across your team
+            </p>
+          </div>
 
           <button
             type="button"
@@ -212,7 +263,7 @@ const BoardView = ({ initialStages, initialAssignees, title }) => {
             onBlur={() => setConfirmingReset(false)}
             disabled={isResetting}
             title="Wipes every task and rebuilds the board from the seed data"
-            className="absolute right-10 rounded-md border border-gray-200 px-3 py-1.5 text-[13px] font-medium text-red-600 transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:text-gray-400 disabled:hover:bg-transparent"
+            className="rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-[13px] font-medium text-red-600 shadow-[0_1px_2px_rgba(0,0,0,0.05)] transition-colors hover:bg-red-50 disabled:cursor-not-allowed disabled:text-gray-400 disabled:hover:bg-white"
           >
             {isResetting
               ? "Resetting…"
@@ -220,8 +271,13 @@ const BoardView = ({ initialStages, initialAssignees, title }) => {
                 ? "Click again to reset"
                 : "Reset board"}
           </button>
+        </header>
+
+        <div className="mt-6">
+          <SyncStatus isBusy={pending > 0} hasFailed={Boolean(error)} />
         </div>
-        <div className="flex items-start justify-center w-full h-full">
+
+        <div className="mt-6 grid grid-cols-1 items-start gap-6 sm:grid-cols-2 xl:grid-cols-4">
           {Object.entries(stages).map(([stageId, stageItem]) => (
             <Box
               key={stageId}
@@ -229,6 +285,7 @@ const BoardView = ({ initialStages, initialAssignees, title }) => {
               title={stageItem.title}
               emoji={stageItem.emoji}
               boxItems={stageItem.items}
+              assigneeById={assigneeById}
               onSelectItem={setSelectedId}
             />
           ))}
